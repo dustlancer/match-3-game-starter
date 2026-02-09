@@ -1,0 +1,238 @@
+<template>
+  <div
+    class="game-tile"
+    :class="{
+      'game-tile--selected': isSelected,
+      'game-tile--empty': !tile,
+      'game-tile--dragging': isDragging,
+    }"
+    :style="tileStyle"
+    :draggable="!!tile && !isProcessing"
+    @click="handleClick"
+    @dragstart="handleDragStart"
+    @dragend="handleDragEnd"
+    @dragover.prevent="handleDragOver"
+    @dragleave="handleDragLeave"
+    @drop.prevent="handleDrop"
+    tabindex="0"
+    @keydown="handleKeydown"
+  >
+    <div v-if="tile" class="game-tile__inner">
+      <div class="game-tile__chip"></div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { computed, ref } from 'vue'
+import { useStore } from 'vuex'
+
+const props = defineProps({
+  row: {
+    type: Number,
+    required: true,
+  },
+  col: {
+    type: Number,
+    required: true,
+  },
+})
+
+const emit = defineEmits(['dragstart', 'drop'])
+
+const store = useStore()
+const isDragging = ref(false)
+const isDragOver = ref(false)
+
+// Получаем фишку на этой позиции
+const tile = computed(() => store.getters['game/getTileAt'](props.row, props.col))
+
+// Проверяем, выбрана ли эта фишка
+const isSelected = computed(() => {
+  const selected = store.getters['game/getSelectedTile']
+  return selected?.row === props.row && selected?.col === props.col
+})
+
+// Проверяем, идёт ли обработка
+const isProcessing = computed(() => store.getters['game/getIsProcessing'])
+
+// Получаем цвет фишки
+const tileColor = computed(() => {
+  if (!tile.value) return 'transparent'
+  return store.getters['game/getTileColor'](tile.value.type)
+})
+
+// Стиль фишки
+const tileStyle = computed(() => ({
+  '--tile-color': tileColor.value,
+  '--tile-shadow': isDragOver.value ? '0 0 10px rgba(255, 255, 255, 0.8)' : 'none',
+}))
+
+// Обработка клика
+function handleClick() {
+  if (isProcessing.value) return
+  store.dispatch('game/selectTile', { row: props.row, col: props.col })
+}
+
+// Обработка начала перетаскивания
+function handleDragStart(event) {
+  if (isProcessing.value || !tile.value) {
+    event.preventDefault()
+    return
+  }
+  
+  isDragging.value = true
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', JSON.stringify({
+    row: props.row,
+    col: props.col,
+  }))
+  
+  // Снимаем выделение при начале перетаскивания
+  store.dispatch('game/clearSelection')
+}
+
+// Обработка окончания перетаскивания
+function handleDragEnd() {
+  isDragging.value = false
+}
+
+// Обработка dragover
+function handleDragOver(event) {
+  if (isProcessing.value) return
+  isDragOver.value = true
+  event.dataTransfer.dropEffect = 'move'
+}
+
+// Обработка dragleave
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+// Обработка drop
+function handleDrop(event) {
+  isDragOver.value = false
+  
+  if (isProcessing.value) return
+  
+  try {
+    const data = JSON.parse(event.dataTransfer.getData('text/plain'))
+    const { row: fromRow, col: fromCol } = data
+    
+    store.dispatch('game/dropTile', {
+      fromRow,
+      fromCol,
+      toRow: props.row,
+      toCol: props.col,
+    })
+  } catch (e) {
+    console.error('Drop error:', e)
+  }
+}
+
+// Обработка клавиш (стрелки)
+function handleKeydown(event) {
+  const keyMap = {
+    ArrowUp: 'up',
+    ArrowDown: 'down',
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+  }
+  
+  const direction = keyMap[event.key]
+  
+  if (direction) {
+    event.preventDefault()
+    
+    // Если фишка выбрана, двигаем её
+    if (isSelected.value) {
+      store.dispatch('game/moveSelectedTile', direction)
+    } else {
+      // Сначала выбираем фишку
+      store.dispatch('game/selectTile', { row: props.row, col: props.col })
+    }
+  }
+  
+  // Enter или Space для выбора
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    handleClick()
+  }
+}
+</script>
+
+<style scoped lang="scss">
+.game-tile {
+  width: 100%;
+  aspect-ratio: 1;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+  outline: none;
+  box-shadow: var(--tile-shadow);
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.3);
+  }
+  
+  &:focus {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+  }
+  
+  &--selected {
+    box-shadow: 0 0 0 3px #fff, 0 0 15px rgba(255, 255, 255, 0.5);
+    transform: scale(1.05);
+    z-index: 1;
+  }
+  
+  &--empty {
+    cursor: default;
+    
+    .game-tile__inner {
+      opacity: 0;
+    }
+  }
+  
+  &--dragging {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  
+  &__inner {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8%;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  
+  &__chip {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: var(--tile-color);
+    box-shadow: 
+      inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+      inset 0 4px 8px rgba(255, 255, 255, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.2s ease;
+    
+    // Блик на фишке
+    &::before {
+      content: '';
+      position: absolute;
+      top: 15%;
+      left: 20%;
+      width: 30%;
+      height: 20%;
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 50%;
+      transform: rotate(-30deg);
+    }
+  }
+}
+</style>
