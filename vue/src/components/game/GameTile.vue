@@ -23,22 +23,19 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useStore } from 'vuex'
 
-const props = defineProps({
-  row: {
-    type: Number,
-    required: true,
-  },
-  col: {
-    type: Number,
-    required: true,
-  },
-})
+const props = defineProps<{
+  row: number
+  col: number
+}>()
 
-const emit = defineEmits(['dragstart', 'drop'])
+const emit = defineEmits<{
+  dragstart: []
+  drop: []
+}>()
 
 const store = useStore()
 const isDragging = ref(false)
@@ -69,21 +66,21 @@ const tileStyle = computed(() => ({
 }))
 
 // Обработка клика
-function handleClick() {
+const handleClick = () => {
   if (isProcessing.value) return
   store.dispatch('game/selectTile', { row: props.row, col: props.col })
 }
 
 // Обработка начала перетаскивания
-function handleDragStart(event) {
+const handleDragStart = (event: DragEvent) => {
   if (isProcessing.value || !tile.value) {
     event.preventDefault()
     return
   }
   
   isDragging.value = true
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', JSON.stringify({
+  event.dataTransfer!.effectAllowed = 'move'
+  event.dataTransfer!.setData('text/plain', JSON.stringify({
     row: props.row,
     col: props.col,
   }))
@@ -93,30 +90,30 @@ function handleDragStart(event) {
 }
 
 // Обработка окончания перетаскивания
-function handleDragEnd() {
+const handleDragEnd = () => {
   isDragging.value = false
 }
 
 // Обработка dragover
-function handleDragOver(event) {
+const handleDragOver = (event: DragEvent) => {
   if (isProcessing.value) return
   isDragOver.value = true
-  event.dataTransfer.dropEffect = 'move'
+  event.dataTransfer!.dropEffect = 'move'
 }
 
 // Обработка dragleave
-function handleDragLeave() {
+const handleDragLeave = () => {
   isDragOver.value = false
 }
 
 // Обработка drop
-function handleDrop(event) {
+const handleDrop = (event: DragEvent) => {
   isDragOver.value = false
   
   if (isProcessing.value) return
   
   try {
-    const data = JSON.parse(event.dataTransfer.getData('text/plain'))
+    const data = JSON.parse(event.dataTransfer!.getData('text/plain'))
     const { row: fromRow, col: fromCol } = data
     
     store.dispatch('game/dropTile', {
@@ -131,8 +128,8 @@ function handleDrop(event) {
 }
 
 // Обработка клавиш (стрелки)
-function handleKeydown(event) {
-  const keyMap = {
+const handleKeydown = (event: KeyboardEvent) => {
+  const keyMap: Record<string, string> = {
     ArrowUp: 'up',
     ArrowDown: 'down',
     ArrowLeft: 'left',

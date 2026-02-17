@@ -69,14 +69,14 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import GameTile from './GameTile.vue'
 import { MIN_GRID_SIZE } from '@/store/game'
 
 const store = useStore()
-const boardRef = ref(null)
+const boardRef = ref<HTMLElement | null>(null)
 
 const rows = computed(() => store.getters['game/getRows'])
 const cols = computed(() => store.getters['game/getCols'])
@@ -91,29 +91,31 @@ const boardStyle = computed(() => ({
 }))
 
 // Обработка изменения количества строк
-function handleRowsChange(event) {
-  const newRows = parseInt(event.target.value, 10)
+const handleRowsChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const newRows = parseInt(target.value, 10)
   if (newRows >= minGridSize) {
     store.dispatch('game/setGridSize', { rows: newRows, cols: cols.value })
   }
 }
 
 // Обработка изменения количества столбцов
-function handleColsChange(event) {
-  const newCols = parseInt(event.target.value, 10)
+const handleColsChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const newCols = parseInt(target.value, 10)
   if (newCols >= minGridSize) {
     store.dispatch('game/setGridSize', { rows: rows.value, cols: newCols })
   }
 }
 
 // Сброс игры
-function resetGame() {
+const resetGame = () => {
   store.dispatch('game/initGame', { rows: rows.value, cols: cols.value })
 }
 
 // Глобальный обработчик клавиш для доски
-function handleBoardKeydown(event) {
-  const keyMap = {
+const handleBoardKeydown = (event: KeyboardEvent) => {
+  const keyMap: Record<string, string> = {
     ArrowUp: 'up',
     ArrowDown: 'down',
     ArrowLeft: 'left',
