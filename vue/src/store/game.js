@@ -177,6 +177,7 @@ export default {
     getBoard: (state) => state.board,
     getRows: (state) => state.rows,
     getCols: (state) => state.cols,
+    getGridSize: (state) => state.rows,
     getSelectedTile: (state) => state.selectedTile,
     getScore: (state) => state.score,
     getIsProcessing: (state) => state.isProcessing,
@@ -185,9 +186,10 @@ export default {
   },
 
   mutations: {
-    [MUTATIONS.SET_GRID_SIZE]: (state, { rows, cols }) => {
-      state.rows = Math.max(MIN_GRID_SIZE, rows)
-      state.cols = Math.max(MIN_GRID_SIZE, cols)
+    [MUTATIONS.SET_GRID_SIZE]: (state, { size }) => {
+      const s = Math.max(MIN_GRID_SIZE, Math.min(12, size))
+      state.rows = s
+      state.cols = s
     },
     [MUTATIONS.SET_BOARD]: (state, board) => {
       state.board = board
@@ -212,15 +214,15 @@ export default {
   },
 
   actions: {
-    initGame: ({ commit, state }, { rows = DEFAULT_GRID_SIZE, cols = DEFAULT_GRID_SIZE } = {}) => {
-      commit(MUTATIONS.SET_GRID_SIZE, { rows, cols })
+    initGame: ({ commit, state }, { size = DEFAULT_GRID_SIZE } = {}) => {
+      commit(MUTATIONS.SET_GRID_SIZE, { size })
       commit(MUTATIONS.SET_SCORE, 0)
       commit(MUTATIONS.SET_SELECTED_TILE, null)
       const board = fillBoardWithoutMatches(state.rows, state.cols)
       commit(MUTATIONS.SET_BOARD, board)
     },
-    setGridSize: ({ dispatch }, { rows, cols }) => {
-      dispatch('initGame', { rows, cols })
+    setGridSize: ({ dispatch }, { size }) => {
+      dispatch('initGame', { size })
     },
     clearSelection: ({ commit }) => {
       commit(MUTATIONS.SET_SELECTED_TILE, null)

@@ -8,25 +8,13 @@
       
       <div class="game-controls">
         <label class="game-control">
-          <span>Строк:</span>
+          <span>Размер поля:</span>
           <input
             type="number"
-            :value="rows"
+            :value="gridSize"
             :min="minGridSize"
             max="12"
-            @change="handleRowsChange"
-            :disabled="isProcessing"
-          />
-        </label>
-        
-        <label class="game-control">
-          <span>Столбцов:</span>
-          <input
-            type="number"
-            :value="cols"
-            :min="minGridSize"
-            max="12"
-            @change="handleColsChange"
+            @change="handleSizeChange"
             :disabled="isProcessing"
           />
         </label>
@@ -44,6 +32,7 @@
     <div 
       class="game-board"
       :style="boardStyle"
+      :key="gridSize"
       @keydown="handleBoardKeydown"
       tabindex="-1"
       ref="boardRef"
@@ -58,14 +47,14 @@
       </template>
     </div>
     
-    <div class="game-instructions">
+    <!-- <div class="game-instructions">
       <h3>Управление:</h3>
       <ul>
         <li><strong>Клик:</strong> выберите фишку, затем кликните на соседнюю для обмена</li>
         <li><strong>Перетаскивание:</strong> перетащите фишку на соседнюю</li>
         <li><strong>Стрелки:</strong> выберите фишку и нажмите стрелку для обмена с соседней</li>
       </ul>
-    </div>
+    </div> -->
   </div>
 </template>
 
@@ -80,37 +69,35 @@ const boardRef = ref<HTMLElement | null>(null)
 
 const rows = computed(() => store.getters['game/getRows'])
 const cols = computed(() => store.getters['game/getCols'])
+const gridSize = computed(() => store.getters['game/getGridSize'])
 const score = computed(() => store.getters['game/getScore'])
 const isProcessing = computed(() => store.getters['game/getIsProcessing'])
 const minGridSize = MIN_GRID_SIZE
 
-// Стиль сетки
-const boardStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${cols.value}, 1fr)`,
-  gridTemplateRows: `repeat(${rows.value}, 1fr)`,
-}))
-
-// Обработка изменения количества строк
-const handleRowsChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const newRows = parseInt(target.value, 10)
-  if (newRows >= minGridSize) {
-    store.dispatch('game/setGridSize', { rows: newRows, cols: cols.value })
+// Стиль сетки (размер поля квадратный) — размер доски масштабируется с gridSize для корректного отображения фона
+const boardStyle = computed(() => {
+  const size = gridSize.value
+  const baseSize = Math.max(240, Math.min(600, size * 50))
+  const maxWidth = typeof window !== 'undefined' ? Math.min(window.innerWidth * 0.9, baseSize) : baseSize
+  return {
+    gridTemplateColumns: `repeat(${size}, 1fr)`,
+    gridTemplateRows: `repeat(${size}, 1fr)`,
+    maxWidth: `${maxWidth}px`,
   }
-}
+})
 
-// Обработка изменения количества столбцов
-const handleColsChange = (event: Event) => {
+// Обработка изменения размера поля
+const handleSizeChange = (event: Event) => {
   const target = event.target as HTMLInputElement
-  const newCols = parseInt(target.value, 10)
-  if (newCols >= minGridSize) {
-    store.dispatch('game/setGridSize', { rows: rows.value, cols: newCols })
+  const newSize = parseInt(target.value, 10)
+  if (newSize >= minGridSize && newSize <= 12) {
+    store.dispatch('game/setGridSize', { size: newSize })
   }
 }
 
 // Сброс игры
 const resetGame = () => {
-  store.dispatch('game/initGame', { rows: rows.value, cols: cols.value })
+  store.dispatch('game/initGame', { size: gridSize.value })
 }
 
 // Глобальный обработчик клавиш для доски
@@ -250,9 +237,9 @@ onMounted(() => {
     0 10px 40px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   width: 100%;
-  max-width: min(90vw, 500px);
   aspect-ratio: 1;
   outline: none;
+  transition: max-width 0.2s ease;
 }
 
 .game-instructions {
