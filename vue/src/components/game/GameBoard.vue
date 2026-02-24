@@ -4,6 +4,11 @@
       <div class="game-score">
         <span class="game-score__label">Очки:</span>
         <span class="game-score__value">{{ score }}</span>
+        <span class="game-score__target">/ {{ targetScore }}</span>
+      </div>
+      <div class="game-timer">
+        <span class="game-timer__label">Время:</span>
+        <span class="game-timer__value">{{ formattedTime }}</span>
       </div>
       
       <div class="game-controls">
@@ -47,6 +52,14 @@
       </template>
     </div>
     
+    <div v-if="levelComplete" class="game-overlay">
+      <div class="game-overlay__content">
+        <h2>{{ score >= targetScore ? 'Победа!' : 'Время вышло' }}</h2>
+        <p>Очки: {{ score }}</p>
+        <button class="game-btn" @click="resetGame">Новая игра</button>
+      </div>
+    </div>
+
     <!-- <div class="game-instructions">
       <h3>Управление:</h3>
       <ul>
@@ -59,10 +72,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import GameTile from './GameTile.vue'
-import { MIN_GRID_SIZE } from '@/store/game'
+import { MIN_GRID_SIZE, TARGET_SCORE } from '@/store/game'
 
 const store = useStore()
 const boardRef = ref<HTMLElement | null>(null)
@@ -72,7 +85,17 @@ const cols = computed(() => store.getters['game/getCols'])
 const gridSize = computed(() => store.getters['game/getGridSize'])
 const score = computed(() => store.getters['game/getScore'])
 const isProcessing = computed(() => store.getters['game/getIsProcessing'])
+const timeRemaining = computed(() => store.getters['game/getTimeRemaining'])
+const levelComplete = computed(() => store.getters['game/getLevelComplete'])
 const minGridSize = MIN_GRID_SIZE
+const targetScore = TARGET_SCORE
+
+const formattedTime = computed(() => {
+  const t = timeRemaining.value
+  const m = Math.floor(t / 60)
+  const s = t % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+})
 
 // Стиль сетки (размер поля квадратный) — размер доски масштабируется с gridSize для корректного отображения фона
 const boardStyle = computed(() => {
@@ -98,6 +121,7 @@ const handleSizeChange = (event: Event) => {
 // Сброс игры
 const resetGame = () => {
   store.dispatch('game/initGame', { size: gridSize.value })
+  startTimer()
 }
 
 // Глобальный обработчик клавиш для доски
@@ -117,9 +141,33 @@ const handleBoardKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// Инициализация игры при монтировании
+let timerInterval: ReturnType<typeof setInterval> | null = null
+
+const startTimer = () => {
+  if (timerInterval) clearInterval(timerInterval)
+  timerInterval = setInterval(() => {
+    store.dispatch('game/tickTimer')
+  }, 1000)
+}
+
+const stopTimer = () => {
+  if (timerInterval) {
+    clearInterval(timerInterval)
+    timerInterval = null
+  }
+}
+
+watch(levelComplete, (complete) => {
+  if (complete) stopTimer()
+})
+
 onMounted(() => {
   store.dispatch('game/initGame')
+  startTimer()
+})
+
+onUnmounted(() => {
+  stopTimer()
 })
 </script>
 
@@ -162,6 +210,61 @@ onMounted(() => {
     font-size: 24px;
     font-weight: bold;
     text-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+  }
+  
+  &__target {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 16px;
+  }
+}
+
+.game-timer {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 12px 24px;
+  border-radius: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  
+  &__label {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 16px;
+  }
+  
+  &__value {
+    color: #2ecc71;
+    font-size: 20px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.game-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  
+  &__content {
+    background: linear-gradient(145deg, #2c3e50 0%, #1a252f 100%);
+    padding: 32px;
+    border-radius: 16px;
+    text-align: center;
+    
+    h2 {
+      margin: 0 0 16px 0;
+      color: #f1c40f;
+      font-size: 28px;
+    }
+    
+    p {
+      margin: 0 0 20px 0;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 18px;
+    }
   }
 }
 
