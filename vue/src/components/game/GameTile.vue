@@ -5,9 +5,13 @@
       'game-tile--selected': isSelected,
       'game-tile--empty': !tile,
       'game-tile--dragging': isDragging,
+      'game-tile--frozen': tile?.frozen,
+      'game-tile--buried': tile?.buried,
+      'game-tile--spiked': tile?.spiked,
+      'game-tile--levitating': tile?.levitating,
     }"
     :style="tileStyle"
-    :draggable="!!tile && !isProcessing"
+    :draggable="!!tile && !isProcessing && !tile?.buried && !tile?.spiked"
     @click="handleClick"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -21,6 +25,10 @@
       <div class="game-tile__chip"></div>
       <span v-if="tile.bonus" class="game-tile__bonus">{{ bonusLabel }}</span>
       <span v-if="tile.crystal" class="game-tile__crystal">★</span>
+      <span v-if="tile.frozen" class="game-tile__frozen">{{ tile.frozen }}</span>
+      <span v-if="tile.buried" class="game-tile__buried">⊡</span>
+      <span v-if="tile.spiked" class="game-tile__spiked">⬡</span>
+      <span v-if="tile.levitating" class="game-tile__levitating">⌃</span>
     </div>
   </div>
 </template>
@@ -64,7 +72,7 @@ const tileColor = computed(() => {
 
 // Метка бонуса
 const bonusLabel = computed(() => {
-  const b = tile.value?.bonus
+  const b = tile.value?.bonus as keyof typeof BONUS_LABELS | undefined
   return b ? (BONUS_LABELS[b] ?? b) : ''
 })
 
@@ -261,6 +269,80 @@ const handleKeydown = (event: KeyboardEvent) => {
     color: #ffd700;
     text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
     pointer-events: none;
+  }
+
+  &__frozen {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    font-size: 10px;
+    font-weight: bold;
+    color: #87ceeb;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+  }
+
+  &__buried {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 12px;
+    color: #8b4513;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+  }
+
+  &__spiked {
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: #808080;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+  }
+
+  &__levitating {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    font-size: 10px;
+    color: #e0e0ff;
+    text-shadow: 0 0 4px rgba(224, 224, 255, 0.8);
+    pointer-events: none;
+  }
+
+  &--frozen .game-tile__chip {
+    box-shadow:
+      inset 0 0 0 2px rgba(135, 206, 235, 0.8),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+      inset 0 4px 8px rgba(255, 255, 255, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  &--buried .game-tile__chip {
+    opacity: 0.85;
+    filter: brightness(0.8);
+  }
+
+  &--spiked .game-tile__chip {
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--tile-color),
+      var(--tile-color) 2px,
+      rgba(128, 128, 128, 0.5) 2px,
+      rgba(128, 128, 128, 0.5) 4px
+    );
+  }
+
+  &--levitating .game-tile__chip {
+    box-shadow:
+      var(--tile-shadow),
+      0 -2px 8px rgba(224, 224, 255, 0.4),
+      inset 0 -4px 8px rgba(0, 0, 0, 0.3),
+      inset 0 4px 8px rgba(255, 255, 255, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.3);
   }
 }
 </style>
