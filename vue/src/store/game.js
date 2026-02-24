@@ -21,6 +21,10 @@ const COMBO_COLOR_IDS = [0, 1, 2, 3, 4]
 export const TARGET_SCORE = 10000
 export const DEFAULT_LEVEL_TIME = 120
 export const MAX_CRYSTALS_PER_LEVEL = 8
+export const IDLE_EFFECT_SECONDS = 10
+
+// Эффекты клеток: frozen (удары до разрушения), buried, spiked, levitating
+export const CELL_EFFECTS = ['frozen', 'buried', 'spiked', 'levitating']
 
 // Минимальный и дефолтный размер сетки
 export const MIN_GRID_SIZE = 4
@@ -37,6 +41,7 @@ const MUTATIONS = {
   SET_TIME_REMAINING: 'SET_TIME_REMAINING',
   ADD_TIME: 'ADD_TIME',
   SET_LEVEL_COMPLETE: 'SET_LEVEL_COMPLETE',
+  SET_LAST_VALID_MOVE_TIME: 'SET_LAST_VALID_MOVE_TIME',
 }
 
 // Генерация случайного типа фишки
@@ -51,7 +56,7 @@ const getRandomCrystal = (currentCount) =>
 
 // Создание фишки
 const createTile = (row, col, opts = {}) => {
-  const { type, bonus, crystal } = opts
+  const { type, bonus, crystal, frozen, buried, spiked, levitating } = opts
   return {
     id: `${row}-${col}-${Date.now()}-${Math.random()}`,
     type: type ?? getRandomTileType(),
@@ -59,6 +64,10 @@ const createTile = (row, col, opts = {}) => {
     col,
     bonus: bonus ?? null,
     crystal: crystal ?? false,
+    frozen: frozen ?? null,
+    buried: buried ?? false,
+    spiked: spiked ?? false,
+    levitating: levitating ?? false,
   }
 }
 
@@ -106,6 +115,9 @@ const fillBoardWithoutMatches = (rows, cols) => {
   return { board, crystalCount }
 }
 
+// Шипованная клетка не участвует в совпадениях
+const canMatch = (tile) => tile && !tile.spiked
+
 // Поиск всех совпадений на доске (возвращает Set ключей и Map цвет -> Set для комбо)
 const findAllMatches = (board, rows, cols) => {
   const matches = new Set()
@@ -113,9 +125,13 @@ const findAllMatches = (board, rows, cols) => {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols - 2; col++) {
       const tile = board[row][col]
-      if (tile === null) continue
+      if (!canMatch(tile)) continue
       let matchLength = 1
-      while (col + matchLength < cols && board[row][col + matchLength]?.type === tile.type) {
+      while (
+        col + matchLength < cols &&
+        canMatch(board[row][col + matchLength]) &&
+        board[row][col + matchLength]?.type === tile.type
+      ) {
         matchLength++
       }
       if (matchLength >= 3) {
@@ -131,9 +147,13 @@ const findAllMatches = (board, rows, cols) => {
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows - 2; row++) {
       const tile = board[row][col]
-      if (tile === null) continue
+      if (!canMatch(tile)) continue
       let matchLength = 1
-      while (row + matchLength < rows && board[row + matchLength]?.[col]?.type === tile.type) {
+      while (
+        row + matchLength < rows &&
+        canMatch(board[row + matchLength]?.[col]) &&
+        board[row + matchLength]?.[col]?.type === tile.type
+      ) {
         matchLength++
       }
       if (matchLength >= 3) {
@@ -149,8 +169,8 @@ const findAllMatches = (board, rows, cols) => {
   return { matches, matchesByColor }
 }
 
-// Расширить Set удалений эффектом бонуса клетки
-const applyBonusEffect = (board, rows, cols, toRemove, row, col) => {
+// Добавить в pending клетки, затронутые бонусом (для последующей обработки frozen)
+const applyBonusEffect = (board, rows, cols, pending, row, col) => {
   const tile = board[row]?.[col]
   if (!tile?.bonus) return
   switch (tile.bonus) {
@@ -160,65 +180,81 @@ const applyBonusEffect = (board, rows, cols, toRemove, row, col) => {
           const nr = row + dr
           const nc = col + dc
           if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
-            toRemove.add(`${nr}-${nc}`)
+            pending.add(`${nr}-${nc}`)
           }
         }
       }
       break
     }
     case 'H':
-      for (let c = 0; c < cols; c++) toRemove.add(`${row}-${c}`)
+      for (let c = 0; c < cols; c++) pending.add(`${row}-${c}`)
       break
     case 'V':
-      for (let r = 0; r < rows; r++) toRemove.add(`${r}-${col}`)
+      for (let r = 0; r < rows; r++) pending.add(`${r}-${col}`)
       break
     default:
       break
   }
 }
 
-// Эффект комбо по цвету
-const applyComboEffect = (board, rows, cols, toRemove, colorId) => {
+// Эффект комбо по цвету (comboCount: 2=базовый, 3=радиус+1, 4=радиус+2...)
+const applyComboEffect = (board, rows, cols, pending, colorId, comboCount) => {
+  const radius = Math.max(1, comboCount - 1)
+  const size = 2 * radius + 1
   switch (colorId) {
     case 0: {
-      const maxR = Math.max(0, rows - 3)
-      const maxC = Math.max(0, cols - 3)
+      const maxR = Math.max(0, rows - size)
+      const maxC = Math.max(0, cols - size)
       const cr = maxR > 0 ? Math.floor(Math.random() * (maxR + 1)) : 0
       const cc = maxC > 0 ? Math.floor(Math.random() * (maxC + 1)) : 0
-      for (let dr = 0; dr < 3 && cr + dr < rows; dr++) {
-        for (let dc = 0; dc < 3 && cc + dc < cols; dc++) {
-          toRemove.add(`${cr + dr}-${cc + dc}`)
+      for (let dr = 0; dr < size && cr + dr < rows; dr++) {
+        for (let dc = 0; dc < size && cc + dc < cols; dc++) {
+          pending.add(`${cr + dr}-${cc + dc}`)
         }
       }
       break
     }
     case 1: {
-      const c = Math.floor(Math.random() * cols)
-      for (let r = 0; r < rows; r++) toRemove.add(`${r}-${c}`)
+      const colsCount = Math.min(comboCount, cols)
+      const startC = colsCount >= cols ? 0 : Math.floor(Math.random() * (cols - colsCount + 1))
+      for (let r = 0; r < rows; r++) {
+        for (let dc = 0; dc < colsCount; dc++) {
+          const c = startC + dc
+          if (c < cols) pending.add(`${r}-${c}`)
+        }
+      }
       break
     }
     case 3: {
-      const r = Math.floor(Math.random() * rows)
-      for (let c = 0; c < cols; c++) toRemove.add(`${r}-${c}`)
+      const rowsCount = Math.min(comboCount, rows)
+      const startR = rowsCount >= rows ? 0 : Math.floor(Math.random() * (rows - rowsCount + 1))
+      for (let c = 0; c < cols; c++) {
+        for (let dr = 0; dr < rowsCount; dr++) {
+          const r = startR + dr
+          if (r < rows) pending.add(`${r}-${c}`)
+        }
+      }
       break
     }
     case 4: {
       const bonus = BONUS_TYPES[Math.floor(Math.random() * BONUS_TYPES.length)]
       if (bonus === 'T-') {
-        return { addTime: -15 }
+        return { addTime: -15 * comboCount }
       }
       if (bonus === 'T+') {
-        return { addTime: 15 }
+        return { addTime: 15 * comboCount }
       }
       const tileWithBonus = []
       for (let rr = 0; rr < rows; rr++) {
         for (let cc = 0; cc < cols; cc++) {
           const t = board[rr]?.[cc]
-          if (t && !toRemove.has(`${rr}-${cc}`)) tileWithBonus.push({ row: rr, col: cc })
+          if (t) tileWithBonus.push({ row: rr, col: cc })
         }
       }
-      if (tileWithBonus.length > 0) {
-        const pick = tileWithBonus[Math.floor(Math.random() * tileWithBonus.length)]
+      const count = Math.min(comboCount, tileWithBonus.length)
+      for (let i = 0; i < count && tileWithBonus.length > 0; i++) {
+        const idx = Math.floor(Math.random() * tileWithBonus.length)
+        const pick = tileWithBonus.splice(idx, 1)[0]
         const nt = board[pick.row][pick.col]
         if (nt) {
           board[pick.row][pick.col] = { ...nt, bonus }
@@ -227,11 +263,17 @@ const applyComboEffect = (board, rows, cols, toRemove, colorId) => {
       break
     }
     case 2: {
+      const crystalTiles = []
       for (let rr = 0; rr < rows; rr++) {
         for (let cc = 0; cc < cols; cc++) {
-          const t = board[rr]?.[cc]
-          if (t?.crystal) toRemove.add(`${rr}-${cc}`)
+          if (board[rr]?.[cc]?.crystal) crystalTiles.push(`${rr}-${cc}`)
         }
+      }
+      const takeCount = Math.min(comboCount, crystalTiles.length)
+      for (let i = 0; i < takeCount && crystalTiles.length > 0; i++) {
+        const idx = Math.floor(Math.random() * crystalTiles.length)
+        pending.add(crystalTiles[idx])
+        crystalTiles.splice(idx, 1)
       }
       break
     }
@@ -270,26 +312,34 @@ const countCrystalsOnBoard = (board, rows, cols) => {
   return count
 }
 
-// Падение фишек вниз и заполнение пустых мест
+// Падение фишек вниз и заполнение пустых мест (левитирующие не падают)
 const applyGravityAndFill = (board, rows, cols) => {
   const newBoard = board.map((row) => [...row])
   for (let col = 0; col < cols; col++) {
-    const tiles = []
+    const fallingTiles = []
+    const levitatingPositions = new Set()
     for (let row = rows - 1; row >= 0; row--) {
-      if (newBoard[row][col] !== null) {
-        tiles.push(newBoard[row][col])
+      const tile = newBoard[row][col]
+      if (tile === null) continue
+      if (tile.levitating) {
+        levitatingPositions.add(row)
+      } else {
+        fallingTiles.push(tile)
       }
     }
+    let fallIdx = 0
     for (let row = rows - 1; row >= 0; row--) {
-      const tileIndex = rows - 1 - row
-      if (tileIndex < tiles.length) {
-        newBoard[row][col] = { ...tiles[tileIndex], row, col }
+      if (levitatingPositions.has(row)) continue
+      if (fallIdx < fallingTiles.length) {
+        newBoard[row][col] = { ...fallingTiles[fallIdx], row, col }
+        fallIdx++
       } else {
         const currentCrystals = countCrystalsOnBoard(newBoard, rows, cols)
         const hasCrystal = getRandomCrystal(currentCrystals)
         newBoard[row][col] = createTile(row, col, {
           bonus: getRandomBonus(),
           crystal: hasCrystal,
+          levitating: true,
         })
       }
     }
@@ -302,6 +352,43 @@ const areAdjacent = (row1, col1, row2, col2) => {
   const rowDiff = Math.abs(row1 - row2)
   const colDiff = Math.abs(col1 - col2)
   return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1)
+}
+
+// Можно ли переместить клетку (не buried, не spiked)
+const canSwap = (tile) => tile && !tile.buried && !tile.spiked
+
+// Есть ли у клетки эффект (для снятия при комбо)
+const hasCellEffect = (tile) =>
+  tile && (tile.frozen || tile.buried || tile.spiked || tile.levitating)
+
+// Снять эффект с клетки (оставить только базовый цвет)
+const clearCellEffect = (tile) => {
+  if (!tile) return tile
+  const { frozen, buried, spiked, levitating, ...rest } = tile
+  return { ...rest, frozen: null, buried: false, spiked: false, levitating: false }
+}
+
+// Случайный эффект для idle
+const getRandomIdleEffect = () => {
+  const effects = ['frozen', 'buried', 'levitating', 'spiked']
+  return effects[Math.floor(Math.random() * effects.length)]
+}
+
+// Применить эффект к клетке
+const applyEffectToTile = (tile, effect) => {
+  if (!tile) return tile
+  switch (effect) {
+    case 'frozen':
+      return { ...tile, frozen: 2 }
+    case 'buried':
+      return { ...tile, buried: true }
+    case 'levitating':
+      return { ...tile, levitating: true }
+    case 'spiked':
+      return { ...tile, spiked: true }
+    default:
+      return tile
+  }
 }
 
 // Обмен двух фишек местами
@@ -327,6 +414,7 @@ export default {
       isProcessing: false,
       timeRemaining: DEFAULT_LEVEL_TIME,
       levelComplete: false,
+      lastValidMoveTime: null,
     }
   },
 
@@ -379,6 +467,9 @@ export default {
     [MUTATIONS.SET_LEVEL_COMPLETE]: (state, value) => {
       state.levelComplete = value
     },
+    [MUTATIONS.SET_LAST_VALID_MOVE_TIME]: (state, value) => {
+      state.lastValidMoveTime = value
+    },
   },
 
   actions: {
@@ -388,6 +479,7 @@ export default {
       commit(MUTATIONS.SET_SELECTED_TILE, null)
       commit(MUTATIONS.SET_TIME_REMAINING, DEFAULT_LEVEL_TIME)
       commit(MUTATIONS.SET_LEVEL_COMPLETE, false)
+      commit(MUTATIONS.SET_LAST_VALID_MOVE_TIME, Date.now())
       const { board } = fillBoardWithoutMatches(state.rows, state.cols)
       commit(MUTATIONS.SET_BOARD, board)
     },
@@ -443,6 +535,11 @@ export default {
     },
     trySwap: async ({ commit, state, dispatch }, { row1, col1, row2, col2 }) => {
       if (state.isProcessing) return
+      const t1 = state.board[row1]?.[col1]
+      const t2 = state.board[row2]?.[col2]
+      if (!canSwap(t1) || !canSwap(t2)) {
+        return
+      }
       commit(MUTATIONS.SET_IS_PROCESSING, true)
       let newBoard = swapTiles(state.board, row1, col1, row2, col2)
       commit(MUTATIONS.SET_BOARD, newBoard)
@@ -457,6 +554,7 @@ export default {
       await dispatch('processMatches')
     },
     processMatches: async ({ commit, state }) => {
+      commit(MUTATIONS.SET_LAST_VALID_MOVE_TIME, Date.now())
       let board = state.board.map((row) => [...row])
       let hasMatches = true
       let totalPoppedThisMove = 0
@@ -471,17 +569,24 @@ export default {
           break
         }
 
-        const toRemove = new Set(matches)
+        const pending = new Set(matches)
+        const toRemove = new Set()
+        const processed = new Set()
 
-        // Собираем цвета в этом раунде (для комбо)
         const colorsThisRound = [...matchesByColor.keys()].filter((c) => COMBO_COLOR_IDS.includes(c))
 
-        // Проверяем комбо: тот же цвет, что и в прошлом раунде
         for (const colorId of colorsThisRound) {
           if (colorId === lastMatchedColor) {
             comboCount++
-            const effect = applyComboEffect(board, state.rows, state.cols, toRemove, colorId)
-            if (effect.addTime) {
+            const effect = applyComboEffect(
+              board,
+              state.rows,
+              state.cols,
+              pending,
+              colorId,
+              comboCount,
+            )
+            if (effect?.addTime) {
               commit(MUTATIONS.ADD_TIME, effect.addTime)
             }
           }
@@ -491,19 +596,42 @@ export default {
           comboCount = 1
         }
 
-        // Эффекты бонусов с удаляемых клеток (итеративно — бонусы могут добавлять новые)
-        let prevSize = 0
-        while (toRemove.size !== prevSize) {
-          prevSize = toRemove.size
-          const toAdd = new Set()
-          toRemove.forEach((key) => {
+        if (comboCount >= 2) {
+          const cellsWithEffects = []
+          for (let r = 0; r < state.rows; r++) {
+            for (let c = 0; c < state.cols; c++) {
+              if (hasCellEffect(board[r]?.[c])) cellsWithEffects.push(`${r}-${c}`)
+            }
+          }
+          const toClear = Math.min(2, cellsWithEffects.length)
+          for (let i = 0; i < toClear && cellsWithEffects.length > 0; i++) {
+            const idx = Math.floor(Math.random() * cellsWithEffects.length)
+            const key = cellsWithEffects.splice(idx, 1)[0]
             const [r, c] = key.split('-').map(Number)
-            applyBonusEffect(board, state.rows, state.cols, toAdd, r, c)
-          })
-          toAdd.forEach((k) => toRemove.add(k))
+            const tile = board[r][c]
+            if (tile) {
+              board[r][c] = clearCellEffect(tile)
+            }
+          }
         }
 
-        // Применяем бонусы T- и T+ с удаляемых клеток
+        while (pending.size > 0) {
+          const key = pending.values().next().value
+          pending.delete(key)
+          if (processed.has(key)) continue
+          processed.add(key)
+          const [r, c] = key.split('-').map(Number)
+          const tile = board[r]?.[c]
+          if (!tile) continue
+          if (tile.spiked) continue
+          if (tile.frozen && tile.frozen > 1) {
+            board[r][c] = { ...tile, frozen: tile.frozen - 1 }
+            continue
+          }
+          toRemove.add(key)
+          applyBonusEffect(board, state.rows, state.cols, pending, r, c)
+        }
+
         toRemove.forEach((key) => {
           const [r, c] = key.split('-').map(Number)
           const tile = board[r]?.[c]
@@ -511,7 +639,6 @@ export default {
           if (tile?.bonus === 'T+') commit(MUTATIONS.ADD_TIME, 10)
         })
 
-        // Подсчёт кристаллов для удаления
         let crystalsInRound = 0
         toRemove.forEach((key) => {
           const [r, c] = key.split('-').map(Number)
@@ -542,6 +669,27 @@ export default {
     },
     tickTimer: ({ commit, state }) => {
       if (state.levelComplete || state.isProcessing) return
+      const now = Date.now()
+      const lastMove = state.lastValidMoveTime ?? now
+      if (lastMove > 0 && (now - lastMove) / 1000 >= IDLE_EFFECT_SECONDS) {
+        const cells = []
+        for (let r = 0; r < state.rows; r++) {
+          for (let c = 0; c < state.cols; c++) {
+            const t = state.board[r]?.[c]
+            if (t && !t.spiked && !hasCellEffect(t)) cells.push({ r, c })
+          }
+        }
+        if (cells.length > 0) {
+          const pick = cells[Math.floor(Math.random() * cells.length)]
+          const tile = state.board[pick.r][pick.c]
+          const effect = getRandomIdleEffect()
+          const newTile = applyEffectToTile(tile, effect)
+          const newBoard = state.board.map((row) => [...row])
+          newBoard[pick.r][pick.c] = newTile
+          commit(MUTATIONS.SET_BOARD, newBoard)
+          commit(MUTATIONS.SET_LAST_VALID_MOVE_TIME, now)
+        }
+      }
       const next = state.timeRemaining - 1
       commit(MUTATIONS.SET_TIME_REMAINING, next)
       if (next <= 0) {
