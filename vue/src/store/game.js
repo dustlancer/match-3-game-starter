@@ -293,11 +293,13 @@ const removeFromBoard = (board, toRemove) => {
   return newBoard
 }
 
-// Подсчёт очков: 3=30, 4=60, 5=120, т.е. 30 * 2^(n-3)
+// Подсчёт очков: 3=30, 4=60, 5=120, т.е. 30 * 2^(n-3). Ограничиваем экспоненту, чтобы избежать взрыва при каскадах
 const calcMoveScore = (totalPopped, crystalsPopped) => {
   if (totalPopped < 3) return 0
-  const base = 30 * Math.pow(2, totalPopped - 3)
-  const crystalMultiplier = Math.pow(3, crystalsPopped)
+  const cappedN = Math.min(totalPopped, 7)
+  const base = 30 * Math.pow(2, cappedN - 3)
+  const cappedCrystals = Math.min(crystalsPopped, 2)
+  const crystalMultiplier = Math.pow(3, cappedCrystals)
   return Math.floor(base * crystalMultiplier)
 }
 
