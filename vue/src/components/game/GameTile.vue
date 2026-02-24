@@ -19,6 +19,8 @@
   >
     <div v-if="tile" class="game-tile__inner">
       <div class="game-tile__chip"></div>
+      <span v-if="tile.bonus" class="game-tile__bonus">{{ bonusLabel }}</span>
+      <span v-if="tile.crystal" class="game-tile__crystal">★</span>
     </div>
   </div>
 </template>
@@ -26,6 +28,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useStore } from 'vuex'
+import { BONUS_LABELS } from '@/store/game'
 
 const props = defineProps<{
   row: number
@@ -57,6 +60,12 @@ const isProcessing = computed(() => store.getters['game/getIsProcessing'])
 const tileColor = computed(() => {
   if (!tile.value) return 'transparent'
   return store.getters['game/getTileColor'](tile.value.type)
+})
+
+// Метка бонуса
+const bonusLabel = computed(() => {
+  const b = tile.value?.bonus
+  return b ? (BONUS_LABELS[b] ?? b) : ''
 })
 
 // Стиль фишки
@@ -230,6 +239,28 @@ const handleKeydown = (event: KeyboardEvent) => {
       border-radius: 50%;
       transform: rotate(-30deg);
     }
+  }
+
+  &__bonus {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 10px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+  }
+
+  &__crystal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    color: #ffd700;
+    text-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
+    pointer-events: none;
   }
 }
 </style>
